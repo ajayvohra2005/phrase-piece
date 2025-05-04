@@ -46,8 +46,6 @@ Parameters:
     Type: String
     Default: m5.xlarge
     AllowedValues:
-      - t3.xlarge
-      - t3a.xlarge
       - m5.xlarge
       - m5a.xlarge
   SecurityGroupAccessCIDR:
@@ -117,11 +115,22 @@ Resources:
         - Key: Name
           Value: !Ref 'AWS::StackName'
 
+  MachineSecurityGroupCIDRIngressDCV: 
+    Condition: CreateNewSecurityGroup
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      Description: Ingress from CIDR for Amazon DCV access to machine
+      GroupId: !GetAtt MachineSecurityGroup.GroupId
+      CidrIp: !Ref SecurityGroupAccessCIDR
+      IpProtocol: tcp
+      FromPort: 8443
+      ToPort: 8443
+
   MachineSecurityGroupCIDRIngressSSH: 
     Condition: CreateNewSecurityGroup
     Type: 'AWS::EC2::SecurityGroupIngress'
     Properties:
-      Description: Ingress from CIDR for SSH access to graphics Machine
+      Description: Ingress from CIDR for SSH access to machine
       GroupId: !GetAtt MachineSecurityGroup.GroupId
       CidrIp: !Ref SecurityGroupAccessCIDR
       IpProtocol: tcp
@@ -258,21 +267,46 @@ Resources:
               export DEBIAN_FRONTEND=noninteractive
               export DEBCONF_NONINTERACTIVE_SEEN=true
 
+              dpkg -l | grep linux | awk -F' ' '{print $2}' > /tmp/dpkg.out
+              for pkg in `cat /tmp/dpkg.out`; do apt-mark hold $pkg; done
+
               # setup software repo for docker
               wget -qO - https://download.docker.com/linux/ubuntu/gpg > ./GPG_DOCKER.PUB
               gpg --no-default-keyring --keyring ./docker_keyring.gpg --import  ./GPG_DOCKER.PUB
               gpg --no-default-keyring --keyring ./docker_keyring.gpg  --export > ./docker.gpg
               mv ./docker.gpg /etc/apt/trusted.gpg.d/
               rm ./GPG_DOCKER.PUB
-   
+
               add-apt-repository -y  "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
 
+              # add key for NICE-DCV
+              wget -qO - https://d1uj6qtbmh3dt5.cloudfront.net/NICE-GPG-KEY > ./NICE-GPG-KEY
+              gpg --no-default-keyring --keyring ./nice_dcv_keyring.gpg --import  ./NICE-GPG-KEY
+              gpg --no-default-keyring --keyring ./nice_dcv_keyring.gpg  --export > ./nice_dcv.gpg
+              mv ./nice_dcv.gpg /etc/apt/trusted.gpg.d/
+              rm ./NICE-GPG-KEY
+
+              # add  visual code repository
+              wget -qO - https://packages.microsoft.com/keys/microsoft.asc > ./microsoft.asc
+              gpg --no-default-keyring --keyring ./microsoft_keyring.gpg --import  ./microsoft.asc
+              gpg --no-default-keyring --keyring ./microsoft_keyring.gpg --export >  ./microsoft.gpg
+              mv ./microsoft.gpg /etc/apt/trusted.gpg.d/
+              rm ./microsoft.asc
+   
+              add-apt-repository -y  "deb [arch=amd64] https://packages.microsoft.com/repos/vscode stable main"
+             
               # update and install required packages
               apt-get update
 
               apt-get -y install git tar zip
               apt-get -y install apt-transport-https ca-certificates curl gnupg-agent software-properties-common
-              
+              apt-get -y install tzdata
+              apt-get -y install keyboard-configuration
+              apt-get -y install gnupg2
+              apt-get -y install lsb-core
+              apt-get -y install openmpi-bin libopenmpi-dev 
+              apt-get -y install protobuf-compiler
+
               # install docker if it is not installed
               if [ ! -x "$(command -v docker)" ]; then
                 apt-get -y install docker-ce docker-ce-cli containerd.io      
@@ -302,6 +336,77 @@ Resources:
 
               # install virtual env package
               python3 -m pip install virtualenv
+ 
+              # install DCV server
+              echo "install DCV server..."
+              apt-get -y install ubuntu-desktop
+
+              if [[ ! -x "$(command -v dcv)" ]]
+                then
+                  apt-get -y install gdm3
+                  echo "/usr/sbin/gdm3" > /etc/X11/default-display-manager
+                  dpkg-reconfigure gdm3
+                  sed -i -e "s/#WaylandEnable=false/WaylandEnable=false/g" /etc/gdm3/custom.conf
+                  systemctl restart gdm3
+
+                  apt-get -y install mesa-utils
+                  if [[ -x "$(command -v nvidia-xconfig)" ]] && [[ -x "$(command -v nvidia-smi)" ]]
+                  then
+                    nvidia-xconfig --preserve-busid --enable-all-gpus
+                  fi
+
+                  #restart X server
+                  echo "restart X-server"
+                  systemctl set-default graphical.target
+                  systemctl isolate graphical.target
+
+                  wget https://d1uj6qtbmh3dt5.cloudfront.net/2024.0/Servers/nice-dcv-2024.0-18131-ubuntu2204-x86_64.tgz
+                  tar -xvzf nice-dcv-2024.0-18131-ubuntu2204-x86_64.tgz
+                  cd nice-dcv-2024.0-18131-ubuntu2204-x86_64
+                  apt-get -y install ./nice-dcv-server_2024.0.18131-1_amd64.ubuntu2204.deb
+                  reboot
+              fi
+
+              #restart X server
+              systemctl set-default graphical.target
+              systemctl isolate graphical.target
+  
+              # Create DCV server configuration file
+              [[ -d /opt/dcv-session-store ]] || mkdir /opt/dcv-session-store
+              echo "[license]" >> dcv.conf
+              echo "[log]" >> dcv.conf
+              echo "[session-management]" >> dcv.conf
+              echo "create-session = true" >> dcv.conf
+              echo "[session-management/defaults]" >> dcv.conf
+              echo "[session-management/automatic-console-session]" >> dcv.conf
+              echo "owner=ubuntu" >> dcv.conf
+              echo "storage-root=\"/opt/dcv-session-store/\"" >> dcv.conf
+              echo "[display]" >> dcv.conf
+              echo "[connectivity]" >> dcv.conf
+              echo "[security]" >> dcv.conf
+              echo "authentication=\"system\"" >> dcv.conf
+              echo "[clipboard]" >> dcv.conf
+              echo "primary-selection-copy=true" >> dcv.conf
+              echo "primary-selection-paste=true" >> dcv.conf
+              mv dcv.conf /etc/dcv/dcv.conf
+
+              # Create DCV session permissions files
+              rm -f /home/ubuntu/dcv.perms
+              echo "[permissions]" >> /home/ubuntu/dcv.perms
+              echo "%owner% allow builtin" >> /home/ubuntu/dcv.perms
+
+              # Enable DCV server
+              systemctl enable dcvserver
+              systemctl restart dcvserver
+              
+              echo "install DCV server complete"
+
+              # install visual code 
+              apt-get -y install code
+
+              cd /home/ubuntu
+              [[ -d phrase-piece ]] || git clone https://github.com/ajayvohra2005/phrase-piece.git
+              chown -R ubuntu:ubuntu phrase-piece
 
               echo "AWS developer machine is ready!" > /etc/motd
 Outputs:

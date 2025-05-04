@@ -61,7 +61,13 @@ Next, you need a build machine. This solution uses [AWS CDK](https://aws.amazon.
 **I acknowledge that AWS CloudFormation might create IAM resources.**  
 * Once the stack status in CloudFormation console is `CREATE_COMPLETE`, find the EC2 instance launched in your stack in the Amazon EC2 console, and [connect to the instance using SSH](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/AccessingInstancesLinux.html) as user `ubuntu`, using your SSH key pair.
 * When you connect to the instance using SSH, if you see the message `"Cloud init in progress."`, disconnect and try later after about 10 minutes. If you see the message `AWS developer machine is ready!`, your build machine is ready.
+* If you see the message ```AWS developer machine is ready!```, run the command ```sudo passwd ubuntu``` to set a new password for user ```ubuntu```. 
+* Download and install the [Amazon DCV client](https://docs.aws.amazon.com/dcv/latest/userguide/client.html) on your laptop.
+* Use the Amazon DCV Client to login to the developer machine as user ```ubuntu```
+* When you first login to the developer machine using the Amazon DCV client, you will be asked if you would like to upgrade the OS version. **Do not upgrade the OS version** .
 
+#### NOTE
+The developer machine uses EC2 [user-data](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/user-data.html) to automatically install the required software in the developer machine instance. The log output of this automatic installation is available in `/var/log/cloud-init-output.log` file. Most *transient* failures in the automatic user-data installation can be fixed by rebooting the instance.
 
 ## Security
 
