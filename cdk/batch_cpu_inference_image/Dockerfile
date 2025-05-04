@@ -1,4 +1,4 @@
-FROM 763104351884.dkr.ecr.us-east-1.amazonaws.com/pytorch-inference:2.6.0-cpu-py312-ubuntu22.04-ec2
+FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-inference:2.6.0-cpu-py312-ubuntu22.04-ec2
 
 RUN apt update
 RUN apt -y install unzip 
