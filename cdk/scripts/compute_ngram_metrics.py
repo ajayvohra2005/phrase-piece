@@ -167,16 +167,43 @@ class ComputeNgramMetrics:
         file = self.__files[name].get(n, None)
         if file:
             file.close()
-    
+
+    @staticmethod
+    def copy_s3_folder_to_local(s3_client, bucket:str, prefix: str, local_dir:str):
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    local_path = os.path.join(local_dir, key[len(prefix)+1:])
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    print(f"Downloading {key} to {local_path}")
+                    s3_client.download_file(bucket, key, local_path)
+
     def __create_models(self):
         attempt = 0
         self.logger.info("Initializing models")
+        st_model = "sentence-transformers/distiluse-base-multilingual-cased-v2"
+        pos_model = f"wietsedv/xlm-roberta-base-ft-udpos28-{self.__language_code}"
         while True:
             try:
-                self.__pos_tokenizer = AutoTokenizer.from_pretrained(f"wietsedv/xlm-roberta-base-ft-udpos28-{self.__language_code}")
-                self.__pos_model = AutoModelForTokenClassification.from_pretrained(f"wietsedv/xlm-roberta-base-ft-udpos28-{self.__language_code}")
+                self.copy_s3_folder_to_local(
+                    s3_client=self.s3_client,
+                    bucket=self.__corpora_bucket,
+                    prefix=f"hf/{st_model}",
+                    local_dir=st_model
+                )
+                self.copy_s3_folder_to_local(
+                    s3_client=self.s3_client,
+                    bucket=self.__corpora_bucket,
+                    prefix=f"hf/{pos_model}",
+                    local_dir=pos_model
+                )
+                self.__pos_tokenizer = AutoTokenizer.from_pretrained(pos_model)
+                self.__pos_model = AutoModelForTokenClassification.from_pretrained(pos_model)
                 self.__pos_pipeline = TokenClassificationPipeline(model=self.__pos_model, tokenizer=self.__pos_tokenizer)
-                self.__st_model = SentenceTransformer('distiluse-base-multilingual-cased-v2')
+                self.__st_model = SentenceTransformer(st_model)
 
                 break
             except Exception as error:
