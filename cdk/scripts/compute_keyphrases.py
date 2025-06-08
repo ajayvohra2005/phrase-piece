@@ -2,6 +2,7 @@ import argparse
 import logging
 import json
 import math
+import os
 from uuid import uuid4
 import boto3
 import time
@@ -179,12 +180,32 @@ class ComputeKeyphrases:
         normalized_sample_embedding =  sample_embedding/np.linalg.norm(sample_embedding, axis=-1, keepdims=True)
         return normalized_sample_embedding
 
+    @staticmethod
+    def copy_s3_folder_to_local(s3_client, bucket:str, prefix: str, local_dir:str):
+        paginator = s3_client.get_paginator('list_objects_v2')
+        pages = paginator.paginate(Bucket=bucket, Prefix=prefix)
+        for page in pages:
+            if 'Contents' in page:
+                for obj in page['Contents']:
+                    key = obj['Key']
+                    local_path = os.path.join(local_dir, key[len(prefix)+1:])
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    print(f"Downloading {key} to {local_path}")
+                    s3_client.download_file(bucket, key, local_path)
+
     def cluster_ngrams(self):
         ngrams = self.__get_top_ngrams()
         self.logger.info(f"Top ngrams: {ngrams}")
 
         ngram_list = list(ngrams.keys())
-        st_model = SentenceTransformer('distiluse-base-multilingual-cased-v2')
+        st_model = "sentence-transformers/distiluse-base-multilingual-cased-v2"
+        self.copy_s3_folder_to_local(
+                    s3_client=self.s3_client,
+                    bucket=self.__corpora_bucket,
+                    prefix=f"hf/{st_model}",
+                    local_dir=st_model
+                )
+        st_model = SentenceTransformer(st_model)
         embeddings, agg_cluster = self.fit_agg_cluster(st_model=st_model, 
                                                        samples=ngram_list, 
                                                        metric=self.__metric, 

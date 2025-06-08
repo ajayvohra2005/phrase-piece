@@ -1,6 +1,6 @@
 {
-    "code-bucket": "",
-    "universe-bucket": "",
+    "code-bucket": "ajayvohra-phrase-piece-pdx-1",
+    "universe-bucket": "ajayvohra-phrase-piece-pdx-1",
     "corpus-stack-name": "phrase-piece",
     "lambda-function-version": "phrase_piece_v1.5",
     "scripts-version": "phrase_piece_v1.9"

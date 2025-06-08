@@ -209,7 +209,7 @@ class ComputeNgramMetrics:
             except Exception as error:
                 self.logger.warning(error)
                 attempt = retry(attempt=attempt, error=error)
-        self.logger.info("All models initalized")
+        self.logger.info("All models initialized")
 
     @classmethod
     def get_text_segments(cls, contexts):
